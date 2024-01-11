@@ -13,6 +13,36 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+
+import pandas as pd
+
+import sqlite3
+
+import requests
+import bs4
+
+###############################################################################
+# 데이터베이스 세팅 ############################################################
+con3 = sqlite3.connect('post3_thema.db')
+con4 = sqlite3.connect('post4_KOSPI.db')
+con5 = sqlite3.connect('post5_KOSDAQ.db')
+con6 = sqlite3.connect('post6_upperLimit.db')
+
+###############################################################################
+# headers 세팅 ################################################################
+headers={
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+  'Accept-Encoding': 'gzip, deflate, br',
+  'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+  'Cache-Control': 'max-age=0',
+  'Referer': 'https://www.google.com/',
+  'Upgrade-Insecure-Requests': '1',
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+}
 
 ########################################################################################################
 # Options() 설명 #######################################################################################
@@ -83,7 +113,59 @@ driver = webdriver.Chrome(chrome_driver, options=options)
 # driver.get('https://www.naver.com/')
 driver.get('https://new.infostock.co.kr/MarketNews/TodaySummary')
 
-# page source 를 1000자까지 출력해보자
-print(driver.page_source[:1000])
+###############################################################################
+# element not interactable 오류!
+# ref1: https://stackoverflow.com/questions/65064715/how-to-change-the-date-of-a-hidden-element-of-a-datepicker-using-setattribute-me
+# ref2: https://shawn-dev.oopy.io/af79811b-2432-42ee-b2dc-b1fcf9a21d23
+page_num = 1
 
-# driver.quit()
+WebDriverWait(driver, 30).until(lambda x: x.find_element(By.CSS_SELECTOR, 'li.num'))
+
+for i in range(1):
+    # 다음 페이지 클릭
+    num = driver.find_elements_by_css_selector("li.num")[i+1]
+    driver.execute_script("arguments[0].click()", num)
+
+    # 날짜 체크!
+    date_raw = driver.find_element_by_css_selector('div.dateCon')
+    date_raw_list = date_raw.get_attribute('innerText').replace('.', '').split(' ')
+    date = date_raw_list[0] + date_raw_list[1] + date_raw_list[2]
+
+    # 증시요약(6) - 특징 상한가 및 급등종목
+    # 증시요약(5) - 특징 종목(코스닥)
+    # 증시요약(4) - 특징 종목(코스피)
+    # 증시요약(3) - 특징 테마
+    
+    # 일단 증시요약(6)만 다운받자
+    # 수동으로 해야됨
+    # tr과 td로 구분해서 pd.DataFrame 구성해야됨. 
+    for j in range(1):
+        post = driver.find_element_by_xpath(f'//*[@id="list_Board"]/div[2]/article/div/table/tbody/tr[{5+j}]/th[1]/td/div[1]/span[{5+j}]/span')
+        driver.execute_script("arguments[0].click()", post)
+        
+        res = driver.find_elements_by_css_selector('div.txtCon.resHtml')
+        type(res[0].get_attribute('innerText'))
+        
+        res = driver.find_elements_by_css_selector('table.tbl')
+        res = driver.find_elements_by_css_selector('div.txtCon.resHtml')
+
+        len(res)
+        for re in res:
+            pd.read_html(re.get_attribute('innerText'))
+            
+        for table in tables:
+            pd.DataFrame(table)
+
+        res=requests.get(url=driver.current_url, headers=headers)
+        # 한글 깨짐 처리
+        # ref: http://pythonstudy.xyz/python/article/403-%ED%8C%8C%EC%9D%B4%EC%8D%AC-Web-Scraping
+        res.encoding
+        res.raise_for_status() 
+        res.encoding=None   # None 으로 설정
+
+        df_list = pd.read_html(res.text)
+        for df in df_list:
+            print(df)
+
+# nextPage = driver.find_element_by_css_selector('li.last')
+# driver.execute_script("arguments[0].click()", nextPage)
