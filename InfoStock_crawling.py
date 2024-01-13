@@ -21,6 +21,7 @@ from selenium.webdriver.support import expected_conditions as EC
 import time
 
 import pandas as pd
+import numpy as np
 
 import sqlite3
 
@@ -36,10 +37,6 @@ def crawl6(arg_driver, arg_date, arg_con):
     # arg_driver = driver
     # arg_date = date
     # arg_con = con6
-
-    j=0
-    post = arg_driver.find_element_by_xpath(f'//*[@id="list_Board"]/div[2]/article/div/table/tbody/tr[{5+j}]/th[1]/td/div[1]/span[{5+j}]/span')
-    arg_driver.execute_script("arguments[0].click()", post) # 증시요약(6) 클릭
     
     table = arg_driver.find_elements_by_css_selector('table.tbl')
 
@@ -92,10 +89,62 @@ def crawl6(arg_driver, arg_date, arg_con):
     df6.to_sql(arg_date, con=arg_con, index=False)
     arg_con.commit()
     
+###############################################################################
+# 증시요약(3) 특징 상한가 및 급등종목 크롤링 함수 ################################
+def crawl3(arg_driver, arg_date, arg_con):    
+    table = arg_driver.find_elements_by_css_selector('table.tbl')
+    
+    # columns = ['특징테마', '이슈요약']
+    df3 = pd.DataFrame() # columns=columns
+    # 증시요약(6)는 테이블이 1개!
+    trList = table[0].find_elements_by_css_selector('tr')
+    # trList[0].get_attribute('innerText')
+    # trList[1].get_attribute('innerText')
+    
+    contents = trList[1].find_elements_by_css_selector('td')
+    df3['테마시황'] = contents[1].get_attribute('innerText').split('\n\n')
+
+    # 주! 1번줄과 2~n번줄까지 양식이 다름!
+
+    for lineNum in range(2, len(trList), 2):
+        # print(lineNum)
+        contents1 = trList[lineNum].find_elements_by_css_selector('td')
+        theme = contents1[0].get_attribute('innerText')
+        line = [contents1[1].get_attribute('innerText')]
+        
+        contents2 = trList[lineNum+1].find_elements_by_css_selector('td')
+        line.extend(contents2[0].get_attribute('innerText').split('\n\n'))
+        
+        if len(line) > len(df3):
+            df3 = df3.reindex(range(len(line)))
+        elif len(line) < len(df3):
+            line = line + [np.nan] * (len(df3) - len(line))
+        
+        # 새 컬럼 추가
+        df3[theme] = line
+
+    df3.to_sql(arg_date, con=arg_con, index=False)
+    arg_con.commit()
+
+###############################################################################
+# 증시요약 클릭하고 날짜 가져오기
+def click_and_getDate(arg_num, arg_driver):
+    post = arg_driver.find_element_by_xpath(f'//*[@id="list_Board"]/div[2]/article/div/table/tbody/tr[{11-arg_num}]/th[1]/td/div[1]/span[{11-arg_num}]/span')
+    arg_driver.execute_script("arguments[0].click()", post) # 증시요약(arg_num) 클릭
+    time.sleep(1)
+
+    # 날짜 체크!
+    date_raw = arg_driver.find_element_by_css_selector('div.dateCon')
+    date_raw_list = date_raw.get_attribute('innerText').replace('.', '').split(' ')
+    date = date_raw_list[0] + date_raw_list[1] + date_raw_list[2]
+    print(f"summary{arg_num}, date: "+date)
+    time.sleep(0.5)
+    
+    return date
 
 ###############################################################################
 # 데이터베이스 세팅 ############################################################
-# con3 = sqlite3.connect('D:\Stock\상한가 크롤링\post3_thema.db')
+con3 = sqlite3.connect('D:\Stock\상한가 크롤링\post3_thema.db')
 # con4 = sqlite3.connect('D:\Stock\상한가 크롤링\post4_KOSPI.db')
 # con5 = sqlite3.connect('D:\Stock\상한가 크롤링\post5_KOSDAQ.db')
 con6 = sqlite3.connect('D:\Stock\상한가 크롤링\post6_upperLimit.db')
@@ -217,26 +266,19 @@ while(1):
     # 수동으로 해야됨
     # tr과 td로 구분해서 pd.DataFrame 구성해야됨. 
 
-    j=0
-    post = driver.find_element_by_xpath(f'//*[@id="list_Board"]/div[2]/article/div/table/tbody/tr[{5+j}]/th[1]/td/div[1]/span[{5+j}]/span')
-    driver.execute_script("arguments[0].click()", post) # 증시요약(6) 클릭
-    time.sleep(1)
-
-    # 날짜 체크!
-    date_raw = driver.find_element_by_css_selector('div.dateCon')
-    date_raw_list = date_raw.get_attribute('innerText').replace('.', '').split(' ')
-    date = date_raw_list[0] + date_raw_list[1] + date_raw_list[2]
-    print("summary6, date: "+date)
+    ###########################################################################
+    # 증시요약(6) 크롤링 #######################################################
+    # 증시요약(6)을 클릭하고 날짜 가져오기
+    date = click_and_getDate(6, driver)
 
     # if int(date) < 20240101:
     #     break
     
-###############################################################################
-# 먼저 데이터가 이미 존재하는지 확인 ############################################
+    ###########################################################################
+    # 먼저 데이터가 이미 존재하는지 확인 ########################################
     
-    # 데이터베이스 연결 생성
-    # con6 = sqlite3.connect('D:\Stock\상한가 크롤링\post6_upperLimit.db')
-    # cursor = con6.cursor()
+    # 데이터베이스 커서 연결
+    cursor = con6.cursor()
     
     # 데이터베이스에 테이블이 존재하는지 확인
     table_name = date
@@ -257,10 +299,37 @@ while(1):
         # 테이블이 이미 존재하는 경우, 아무 작업도 수행하지 않음
         print(f"Table '{table_name}' already exists.")
     
+    ###########################################################################
+    # 증시요약(3) 크롤링 #######################################################
+    # 증시요약(3)을 클릭하고 날짜 가져오기
+    date = click_and_getDate(3, driver)
+    cursor = con3.cursor()
     
+    # 데이터베이스에 테이블이 존재하는지 확인
+    table_name = date
+    cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}';")
+    time.sleep(1)
+
+    exists = cursor.fetchone()
+    
+    if not exists:
+        try:
+            # 테이블이 존재하지 않으면 크롤링 및 to_sql 실행
+            crawl3(driver, date, con3)
+            time.sleep(5)
+
+        except Exception as e:
+            print(f"Error occurred: {e}")
+    else:
+        # 테이블이 이미 존재하는 경우, 아무 작업도 수행하지 않음
+        print(f"Table '{table_name}' already exists.")
+
+    ###########################################################################
+    # 조건 만족하면 크롤링 중단 ################################################    
     if int(date) < 20240101:
         break
 
     
 # 연결 닫기
 con6.close()
+con3.close()
