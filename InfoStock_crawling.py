@@ -18,6 +18,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
+import time
+
 import pandas as pd
 
 import sqlite3
@@ -25,12 +27,78 @@ import sqlite3
 import requests
 import bs4
 
+import re
+###############################################################################
+# 증시요약(6) 특징 상한가 및 급등종목 크롤링 함수 ################################
+def crawl6(arg_driver, arg_date, arg_con):
+
+    # 개발 중간 확인용
+    # arg_driver = driver
+    # arg_date = date
+    # arg_con = con6
+
+    j=0
+    post = arg_driver.find_element_by_xpath(f'//*[@id="list_Board"]/div[2]/article/div/table/tbody/tr[{5+j}]/th[1]/td/div[1]/span[{5+j}]/span')
+    arg_driver.execute_script("arguments[0].click()", post) # 증시요약(6) 클릭
+    
+    table = arg_driver.find_elements_by_css_selector('table.tbl')
+
+    columns = ['name', 'code', 'price', 'fluctuation', 'upperLimit_streak', 'reason']
+    df6 = pd.DataFrame(columns=columns)
+    # 증시요약(6)는 테이블이 1개!
+    trList = table[0].find_elements_by_css_selector('tr')
+    # trList[0].get_attribute('innerText')
+    # trList[1].get_attribute('innerText')
+    for lineNum in range(2, len(trList)):
+        # print(lineNum)
+    
+        # 2번부터 테이블 내용임
+        # trList[2].get_attribute('innerText')
+        contents = trList[lineNum].find_elements_by_css_selector('td')
+        # test 출력
+        # for element in trList[lineNum].find_elements_by_css_selector('td'):
+        #     print(element.get_attribute('innerText'))
+        #     print("###################")
+        
+        # line1: 종목명/종목코드/가격/등락률
+        # contents[0].get_attribute('innerText').split('\n')
+        name = contents[0].get_attribute('innerText').split('\n')[0] # 1. 종목명
+
+        pattern = r'[^0-9]'
+        code = re.sub(pattern, '', contents[0].get_attribute('innerText').split('\n')[1])  
+        price = re.sub(pattern, '', contents[0].get_attribute('innerText').split('\n')[2])  
+        
+        pattern = r'[+%()]'
+        fluctuation = re.sub(pattern, '', contents[0].get_attribute('innerText').split('\n')[3])  
+
+        # line2: 상한가 일수
+        if contents[1].get_attribute('innerText') == '':
+            upperLimit_streak = 0
+        else:
+            upperLimit_streak = contents[1].get_attribute('innerText')
+        
+        # line3: 상한가 사유
+        reason = contents[2].get_attribute('innerText')
+
+        # 각 내용을 하나의 리스트로 만들기
+        line = [name, code, price, fluctuation, upperLimit_streak, reason]
+        
+        ''' list 를 데이터프레임에 추가하기
+        ref: https://emilkwak.github.io/dataframe-list-row-append-ignore-index
+        '''
+        # df6 = df6.append(pd.Series(line), ignore_index=True) # 이렇게 짜면 새로운 컬럼에 저장한다. 
+        df6 = df6.append(pd.Series(line, index=df6.columns), ignore_index=True)
+
+    df6.to_sql(arg_date, con=arg_con, index=False)
+    arg_con.commit()
+    
+
 ###############################################################################
 # 데이터베이스 세팅 ############################################################
-con3 = sqlite3.connect('post3_thema.db')
-con4 = sqlite3.connect('post4_KOSPI.db')
-con5 = sqlite3.connect('post5_KOSDAQ.db')
-con6 = sqlite3.connect('post6_upperLimit.db')
+# con3 = sqlite3.connect('D:\Stock\상한가 크롤링\post3_thema.db')
+# con4 = sqlite3.connect('D:\Stock\상한가 크롤링\post4_KOSPI.db')
+# con5 = sqlite3.connect('D:\Stock\상한가 크롤링\post5_KOSDAQ.db')
+con6 = sqlite3.connect('D:\Stock\상한가 크롤링\post6_upperLimit.db')
 
 ###############################################################################
 # headers 세팅 ################################################################
@@ -121,15 +189,24 @@ page_num = 1
 
 WebDriverWait(driver, 30).until(lambda x: x.find_element(By.CSS_SELECTOR, 'li.num'))
 
-for i in range(1):
-    # 다음 페이지 클릭
-    num = driver.find_elements_by_css_selector("li.num")[i+1]
-    driver.execute_script("arguments[0].click()", num)
+cursor = con6.cursor()
+while(1):
+    # 현재 페이지 확인
+    currentPage = int(driver.find_element_by_css_selector("li.num.current").get_attribute("innerText"))
 
-    # 날짜 체크!
-    date_raw = driver.find_element_by_css_selector('div.dateCon')
-    date_raw_list = date_raw.get_attribute('innerText').replace('.', '').split(' ')
-    date = date_raw_list[0] + date_raw_list[1] + date_raw_list[2]
+    # 현재 페이지가 마지막이면 next 클릭, 아니면 다음페이지 클릭
+    pageClick = currentPage % 5
+    if pageClick == 0:
+        num = driver.find_element_by_css_selector("li.last")
+        driver.execute_script("arguments[0].click()", num)
+        time.sleep(2)
+    else:        
+        # 다음 페이지 클릭
+        num = driver.find_elements_by_css_selector("li.num")[pageClick]
+        driver.execute_script("arguments[0].click()", num)
+    time.sleep(1)
+
+    # len(driver.find_elements_by_css_selector("li.num"))
 
     # 증시요약(6) - 특징 상한가 및 급등종목
     # 증시요약(5) - 특징 종목(코스닥)
@@ -139,33 +216,51 @@ for i in range(1):
     # 일단 증시요약(6)만 다운받자
     # 수동으로 해야됨
     # tr과 td로 구분해서 pd.DataFrame 구성해야됨. 
-    for j in range(1):
-        post = driver.find_element_by_xpath(f'//*[@id="list_Board"]/div[2]/article/div/table/tbody/tr[{5+j}]/th[1]/td/div[1]/span[{5+j}]/span')
-        driver.execute_script("arguments[0].click()", post)
-        
-        res = driver.find_elements_by_css_selector('div.txtCon.resHtml')
-        type(res[0].get_attribute('innerText'))
-        
-        res = driver.find_elements_by_css_selector('table.tbl')
-        res = driver.find_elements_by_css_selector('div.txtCon.resHtml')
 
-        len(res)
-        for re in res:
-            pd.read_html(re.get_attribute('innerText'))
-            
-        for table in tables:
-            pd.DataFrame(table)
+    j=0
+    post = driver.find_element_by_xpath(f'//*[@id="list_Board"]/div[2]/article/div/table/tbody/tr[{5+j}]/th[1]/td/div[1]/span[{5+j}]/span')
+    driver.execute_script("arguments[0].click()", post) # 증시요약(6) 클릭
+    time.sleep(1)
 
-        res=requests.get(url=driver.current_url, headers=headers)
-        # 한글 깨짐 처리
-        # ref: http://pythonstudy.xyz/python/article/403-%ED%8C%8C%EC%9D%B4%EC%8D%AC-Web-Scraping
-        res.encoding
-        res.raise_for_status() 
-        res.encoding=None   # None 으로 설정
+    # 날짜 체크!
+    date_raw = driver.find_element_by_css_selector('div.dateCon')
+    date_raw_list = date_raw.get_attribute('innerText').replace('.', '').split(' ')
+    date = date_raw_list[0] + date_raw_list[1] + date_raw_list[2]
+    print("summary6, date: "+date)
 
-        df_list = pd.read_html(res.text)
-        for df in df_list:
-            print(df)
+    # if int(date) < 20240101:
+    #     break
+    
+###############################################################################
+# 먼저 데이터가 이미 존재하는지 확인 ############################################
+    
+    # 데이터베이스 연결 생성
+    # con6 = sqlite3.connect('D:\Stock\상한가 크롤링\post6_upperLimit.db')
+    # cursor = con6.cursor()
+    
+    # 데이터베이스에 테이블이 존재하는지 확인
+    table_name = date
+    cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}';")
+    time.sleep(1)
 
-# nextPage = driver.find_element_by_css_selector('li.last')
-# driver.execute_script("arguments[0].click()", nextPage)
+    exists = cursor.fetchone()
+    
+    if not exists:
+        try:
+            # 테이블이 존재하지 않으면 크롤링 및 to_sql 실행
+            crawl6(driver, date, con6)
+            time.sleep(5)
+
+        except Exception as e:
+            print(f"Error occurred: {e}")
+    else:
+        # 테이블이 이미 존재하는 경우, 아무 작업도 수행하지 않음
+        print(f"Table '{table_name}' already exists.")
+    
+    
+    if int(date) < 20240101:
+        break
+
+    
+# 연결 닫기
+con6.close()
