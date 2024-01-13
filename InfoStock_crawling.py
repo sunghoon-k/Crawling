@@ -29,8 +29,10 @@ import requests
 import bs4
 
 import re
+
 ###############################################################################
-# 증시요약(6) 특징 상한가 및 급등종목 크롤링 함수 ################################
+# 함수 모음 ####################################################################
+# 증시요약(6) 특징 상한가 및 급등종목 크롤링 함수 
 def crawl6(arg_driver, arg_date, arg_con):
 
     # 개발 중간 확인용
@@ -89,8 +91,7 @@ def crawl6(arg_driver, arg_date, arg_con):
     df6.to_sql(arg_date, con=arg_con, index=False)
     arg_con.commit()
     
-###############################################################################
-# 증시요약(3) 특징 상한가 및 급등종목 크롤링 함수 ################################
+# 증시요약(3) 특징 테마 
 def crawl3(arg_driver, arg_date, arg_con):    
     table = arg_driver.find_elements_by_css_selector('table.tbl')
     
@@ -126,7 +127,6 @@ def crawl3(arg_driver, arg_date, arg_con):
     df3.to_sql(arg_date, con=arg_con, index=False)
     arg_con.commit()
 
-###############################################################################
 # 증시요약 클릭하고 날짜 가져오기
 def click_and_getDate(arg_num, arg_driver):
     post = arg_driver.find_element_by_xpath(f'//*[@id="list_Board"]/div[2]/article/div/table/tbody/tr[{11-arg_num}]/th[1]/td/div[1]/span[{11-arg_num}]/span')
