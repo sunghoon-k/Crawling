@@ -35,13 +35,25 @@ from pykrx import stock
 
 URL = 'https://www.paxnet.co.kr/search/news?kwd=%EC%A6%9D%EC%8B%9C%EC%9A%94%EC%95%BD&wlog_nsise=search&order=1'
 
-def send_message(msg):
-    """디스코드 메세지 전송"""
-    DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1193504274638983239/JXP41qlsLJzN0_uXCN5BMoBa5x3BcY1_1sRKORxDWYmNRWsQMz05yLbyjI2RuLWLwrhm'
-    now = datetime.datetime.now()
-    message = {"content": f"[{now.strftime('%Y-%m-%d %H:%M:%S')}] {str(msg)}"}
-    requests.post(DISCORD_WEBHOOK_URL, data=message)
-    print(message)
+# # 카카오 전송 <- 글자수 200자 제한;;
+# kakaoAPI = 'e6c6eb8243b356ca28dfe8394ee7d30e'
+# kakaoURL = "https://kapi.kakao.com/v2/api/talk/memo/default/send"
+# kakaoHEADER = {
+#     "Content-Type": "application/x-www-form-urlencoded", 
+#     "Authorization": 'Bearer ' + kakaoAPI,
+#     'Content-Type': 'application/json; charset=utf-8'}
+
+def send_message(content, URL, HEADER):
+    payload = {'content': content}
+    response = requests.post(URL, json=payload, headers=HEADER)
+
+    if response.status_code == 200:
+        print(f'성공적으로 카카오톡에 전송했습니다.')
+    else:
+        print(f'전송 실패. HTTP 상태 코드: {response.status_code}')
+    time.sleep(1)
+
+
 
 # 증시요약(6) 특징 상한가 및 급등종목 크롤링 함수
 def crawl6(arg_driver, arg_date, arg_con):
@@ -290,20 +302,32 @@ headers = {'Content-Type': 'application/json; charset=utf-8'}
 
 # 각 컬럼의 내용을 띄워서 전송
 # 각 컬럼의 내용을 띄워서 전송 (None 값 제외)
+
+content = '####################################################################\n'
+content += f'**{recent_business_day}증시요약(3) - 특징 테마**:\n\n'
+send_message(content, DISCORD_WEBHOOK_URL, headers)
+
 for column in df3.columns:
-    content = f'**{column}**:\n'
+    content = f'**{column}**:\n\n'
     for value in df3[column].dropna():  # None 값을 제외하고 데이터만 가져오기
-        content += f'{value}\n'
-    
-    payload = {'content': content}
-    response = requests.post(DISCORD_WEBHOOK_URL, json=payload, headers=headers)
+        content += f'{value}\n\n'
+    content += '\n\n'
+    send_message(content, DISCORD_WEBHOOK_URL, headers)
 
-    if response.status_code == 200:
-        print(f'{column}을 성공적으로 디스코드에 전송했습니다.')
-    else:
-        print(f'{column} 전송 실패. HTTP 상태 코드: {response.status_code}')
-    time.sleep(1)
 
-    
+content = '####################################################################\n'
+content += f'**{recent_business_day}증시요약(6) - 특징 상한가 및 급등종목**:\n\n'
+send_message(content, DISCORD_WEBHOOK_URL, headers)
+
+# 각 행을 한 줄마다 띄워서 전송
+for index, row in df6.iterrows():
+    content = f'종목{index+1}.####################\n'
+    content += f'종목명: {row["name"]}\n'
+    content += f'주식가격: {row["price"]}\n'
+    content += f'등락률: {row["fluctuation"]}\n'
+    content += f'상한가 연속: {row["upperLimit_streak"]}\n'
+    content += f'사유: {row["reason"]}\n'
+    send_message(content, DISCORD_WEBHOOK_URL, headers)
+
 # ohlcv 가져오기        
 # df = stock.get_market_ohlcv("20190720", "20220810", "1001")
